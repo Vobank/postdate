@@ -1,0 +1,3 @@
+# Encrypts saved channel credentials (SMTP passwords, bot tokens, webhook URLs).
+# Any long random string works. Generate one with: openssl rand -base64 32
+SECRET_KEY=replace-with-a-long-random-string

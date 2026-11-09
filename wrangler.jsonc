@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "postdate",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  // worker-mailer (SMTP) needs the Node.js compatibility layer.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // No database_id on purpose: Wrangler creates the database on first deploy.
+  "d1_databases": [{ "binding": "DB", "database_name": "postdate" }],
+  // The dispatcher wakes up once a minute and sends whatever is due.
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  },
+  "upload_source_maps": true
+}
