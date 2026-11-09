@@ -174,8 +174,12 @@ p {
   color: var(--red);
 }
 
-[dir='rtl'] .crumb a {
+.arrow {
   display: inline-block;
+}
+
+[dir='rtl'] .arrow {
+  transform: scaleX(-1);
 }
 
 .lead {

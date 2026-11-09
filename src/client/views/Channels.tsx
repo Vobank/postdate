@@ -173,7 +173,7 @@ export function ChannelForm({ id }: { id?: string }) {
   return (
     <>
       <p class="crumb">
-        <Link to="/channels">← {t('nav.channels')}</Link>
+        <Link to="/channels"><span class="arrow" aria-hidden="true">←</span> {t('nav.channels')}</Link>
       </p>
       <h1>{id ? name || t('channel.edit') : t('channels.add')}</h1>
 

@@ -189,7 +189,7 @@ export function Compose({ id, copyFrom }: { id?: string; copyFrom?: string }) {
   return (
     <>
       <p class="crumb">
-        <Link to="/">← {t('nav.schedule')}</Link>
+        <Link to="/"><span class="arrow" aria-hidden="true">←</span> {t('nav.schedule')}</Link>
       </p>
       <h1>{t(id ? 'msg.edit' : 'msg.new')}</h1>
 
