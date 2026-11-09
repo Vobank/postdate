@@ -10,6 +10,10 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  // Preact's JSX runtime, without needing a framework plugin.
+  oxc: {
+    jsx: { runtime: 'automatic', importSource: 'preact' },
+  },
   build: {
     outDir: '../../dist/client',
     emptyOutDir: true,
