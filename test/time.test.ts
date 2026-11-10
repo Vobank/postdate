@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   addRepeat,
   formatLocal,
+  isLocalDate,
   isValidTimeZone,
   nextOccurrence,
+  occurrencesBetween,
   parseLocal,
   utcToWall,
   wallToUtc,
@@ -84,6 +86,99 @@ describe('addRepeat', () => {
     const anchor = wall('2028-02-29T08:00');
     expect(formatLocal(addRepeat(anchor, 'yearly', 1))).toBe('2029-02-28T08:00');
     expect(formatLocal(addRepeat(anchor, 'yearly', 4))).toBe('2032-02-29T08:00');
+  });
+});
+
+describe('addRepeat with a rule', () => {
+  const dates = (anchor: string, count: number, rule: { interval?: number; weekdays?: number }) =>
+    Array.from({ length: count }, (_, n) => formatLocal(addRepeat(wall(anchor), 'weekly', n, rule)).slice(0, 10));
+
+  it('steps by the interval', () => {
+    expect(formatLocal(addRepeat(wall('2027-01-30T08:00'), 'daily', 2, { interval: 3 }))).toBe('2027-02-05T08:00');
+    expect(formatLocal(addRepeat(wall('2027-01-04T08:00'), 'weekly', 3, { interval: 2 }))).toBe('2027-02-15T08:00');
+    expect(formatLocal(addRepeat(wall('2027-11-30T08:00'), 'monthly', 1, { interval: 3 }))).toBe('2028-02-29T08:00');
+    expect(formatLocal(addRepeat(wall('2028-02-29T08:00'), 'yearly', 1, { interval: 4 }))).toBe('2032-02-29T08:00');
+  });
+
+  it('walks the chosen days of the week in order', () => {
+    // 4 January 2027 is a Monday. Monday, Wednesday and Friday.
+    const days = (1 << 1) | (1 << 3) | (1 << 5);
+    expect(dates('2027-01-04T08:00', 5, { weekdays: days })).toEqual([
+      '2027-01-04',
+      '2027-01-06',
+      '2027-01-08',
+      '2027-01-11',
+      '2027-01-13',
+    ]);
+  });
+
+  it('starts on the first chosen day when the anchor is not one of them', () => {
+    // Anchored on a Wednesday, running on Mondays and Tuesdays.
+    const days = (1 << 1) | (1 << 2);
+    expect(dates('2027-01-06T08:00', 3, { weekdays: days })).toEqual(['2027-01-11', '2027-01-12', '2027-01-18']);
+  });
+
+  it('skips whole weeks between runs of chosen days', () => {
+    const days = (1 << 1) | (1 << 5);
+    expect(dates('2027-01-04T08:00', 4, { weekdays: days, interval: 2 })).toEqual([
+      '2027-01-04',
+      '2027-01-08',
+      '2027-01-18',
+      '2027-01-22',
+    ]);
+  });
+});
+
+describe('schedules that end', () => {
+  const anchor = wall('2027-01-01T09:00');
+
+  it('runs on the last day and not after it', () => {
+    const rule = { until: '2027-01-03' };
+    expect(nextOccurrence(anchor, 'UTC', 'daily', Date.UTC(2027, 0, 2, 9), 0, rule)?.at).toBe(Date.UTC(2027, 0, 3, 9));
+    expect(nextOccurrence(anchor, 'UTC', 'daily', Date.UTC(2027, 0, 3, 9), 0, rule)).toBeNull();
+  });
+
+  it('reads the last day in the time zone of the schedule', () => {
+    // 23:30 on the 2nd in Tokyo is 14:30 UTC, still inside the last day there.
+    const late = wall('2027-01-01T23:30');
+    const next = nextOccurrence(late, 'Asia/Tokyo', 'daily', wallToUtc(late, 'Asia/Tokyo'), 0, { until: '2027-01-02' });
+    expect(formatLocal(utcToWall(next?.at ?? 0, 'Asia/Tokyo'))).toBe('2027-01-02T23:30');
+  });
+});
+
+describe('occurrencesBetween', () => {
+  const anchor = wall('2027-01-01T09:00');
+
+  it('lists the runs inside a window', () => {
+    const runs = occurrencesBetween(anchor, 'UTC', 'daily', {}, 0, Date.UTC(2027, 0, 3), Date.UTC(2027, 0, 6));
+    expect(runs.map(iso)).toEqual([
+      '2027-01-03T09:00:00.000Z',
+      '2027-01-04T09:00:00.000Z',
+      '2027-01-05T09:00:00.000Z',
+    ]);
+  });
+
+  it('includes a run at the very start of the window and stops at the limit', () => {
+    const runs = occurrencesBetween(anchor, 'UTC', 'weekly', {}, 0, Date.UTC(2027, 0, 1, 9), Infinity, 2);
+    expect(runs).toEqual([Date.UTC(2027, 0, 1, 9), Date.UTC(2027, 0, 8, 9)]);
+  });
+
+  it('stops at the end date', () => {
+    expect(occurrencesBetween(anchor, 'UTC', 'daily', { until: '2027-01-02' }, 0, 0, Infinity)).toHaveLength(2);
+  });
+
+  it('gives a one-off message its single run', () => {
+    expect(occurrencesBetween(anchor, 'UTC', 'none', {}, 0, 0, Infinity)).toEqual([Date.UTC(2027, 0, 1, 9)]);
+    expect(occurrencesBetween(anchor, 'UTC', 'none', {}, 0, Date.UTC(2027, 0, 2), Infinity)).toEqual([]);
+  });
+});
+
+describe('isLocalDate', () => {
+  it('accepts real dates only', () => {
+    expect(isLocalDate('2028-02-29')).toBe(true);
+    expect(isLocalDate('2027-02-29')).toBe(false);
+    expect(isLocalDate('2027-2-9')).toBe(false);
+    expect(isLocalDate('')).toBe(false);
   });
 });
 

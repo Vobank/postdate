@@ -4,6 +4,8 @@ import type { AppState } from '../shared/types';
 import { ApiError, api, whenSignedOut } from './api';
 import { I18nContext, initialLang, loadLang, translator, useI18n } from './i18n';
 import type { I18n, Lang } from './i18n';
+import { applyPrefs } from './prefs';
+import { Postmark } from './icons';
 import { Link, useLocation } from './router';
 import { ErrorNotice } from './ui';
 import { ChannelForm, Channels } from './views/Channels';
@@ -14,7 +16,7 @@ import { Settings } from './views/Settings';
 
 declare const __APP_VERSION__: string;
 
-function Shell({ onSignedOut }: { onSignedOut: () => void }) {
+function Shell({ email, onSignedOut }: { email: string; onSignedOut: () => void }) {
   const { path, query } = useLocation();
   const { t } = useI18n();
   const section = path.startsWith('/channels') ? 'channels' : path === '/settings' ? 'settings' : 'schedule';
@@ -28,13 +30,14 @@ function Shell({ onSignedOut }: { onSignedOut: () => void }) {
   else if (path === '/channels') view = <Channels />;
   else if (channelId === 'new') view = <ChannelForm key="new" />;
   else if (channelId) view = <ChannelForm key={channelId} id={channelId} />;
-  else if (path === '/settings') view = <Settings onSignedOut={onSignedOut} />;
+  else if (path === '/settings') view = <Settings email={email} onSignedOut={onSignedOut} />;
   else view = <ErrorNotice error={new ApiError('not_found')} />;
 
   return (
     <div class="page">
       <header class="masthead">
         <Link to="/" class="wordmark">
+          <Postmark />
           Postdate
         </Link>
         <nav class="nav">
@@ -65,23 +68,27 @@ function App() {
     void loadLang(next).then(() => setLangState(next));
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<AppState | null> => {
     try {
-      setState(await api<AppState>('GET', '/state'));
+      const next = await api<AppState>('GET', '/state');
+      setState(next);
       setError(null);
+      return next;
     } catch (e) {
       setError(e);
+      return null;
     }
   }, []);
 
   useEffect(() => {
-    const first = initialLang();
-    void loadLang(first).then(() => {
-      setLangState(first);
+    whenSignedOut(() => void refresh());
+    // The state comes first: it says which language this instance prefers.
+    void refresh().then(async (first) => {
+      const chosen = initialLang(first?.lang);
+      await loadLang(chosen);
+      setLangState(chosen);
       setReady(true);
     });
-    whenSignedOut(() => void refresh());
-    void refresh();
   }, [refresh]);
 
   const i18n = useMemo<I18n>(() => ({ lang, t: translator(lang), setLang }), [lang, setLang, ready]);
@@ -94,13 +101,15 @@ function App() {
           <ErrorNotice error={error} />
         </div>
       ) : !state ? null : state.signedIn ? (
-        <Shell onSignedOut={() => void refresh()} />
+        <Shell email={state.email ?? ''} onSignedOut={() => void refresh()} />
       ) : (
         <Gate state={state} onDone={() => void refresh()} />
       )}
     </I18nContext.Provider>
   );
 }
+
+applyPrefs();
 
 const root = document.getElementById('app');
 if (root) render(<App />, root);

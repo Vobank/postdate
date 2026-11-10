@@ -1,14 +1,18 @@
 import type { ChannelType } from './channels';
 import type { Repeat } from './time';
 
-export type MessageStatus = 'scheduled' | 'sending' | 'sent' | 'failed';
+export type MessageStatus = 'scheduled' | 'paused' | 'sending' | 'sent' | 'failed';
 
 export interface AppState {
   /** SECRET_KEY is present on the worker. */
   configured: boolean;
-  /** An owner password has been set. */
-  claimed: boolean;
   signedIn: boolean;
+  /** The signed-in account's email. */
+  email: string | null;
+  /** New accounts can be created here. */
+  signups: boolean;
+  /** The instance's own default language, if its owner set one. */
+  lang: string | null;
 }
 
 export interface ChannelDTO {
@@ -34,6 +38,16 @@ export interface MessageDTO {
   localTime: string;
   timezone: string;
   repeat: Repeat;
+  /** Every N days, weeks, months or years. */
+  interval: number;
+  /** Weekly only: days to run on, bit 0 = Sunday. Zero is the anchor's own day. */
+  weekdays: number;
+  /** Last local date the schedule may run on, "YYYY-MM-DD". */
+  until: string | null;
+  /** Stop after this many sends. */
+  maxSends: number | null;
+  /** Index of the next run within the schedule. */
+  occurrence: number;
   /** Next (or, once finished, last) scheduled instant, ms since epoch. */
   sendAt: number;
   status: MessageStatus;
@@ -58,4 +72,11 @@ export interface MessageInput {
   localTime: string;
   timezone: string;
   repeat: Repeat;
+  interval?: number;
+  weekdays?: number;
+  until?: string | null;
+  maxSends?: number | null;
 }
+
+/** Deliveries in one quarter of an hour: [start, delivered, failed]. */
+export type ActivityBucket = [number, number, number];

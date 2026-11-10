@@ -7,7 +7,7 @@ export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 export interface FieldDef {
   key: string;
-  kind: 'text' | 'email' | 'url' | 'number' | 'select' | 'multiline';
+  kind: 'text' | 'email' | 'url' | 'number' | 'select' | 'multiline' | 'toggle';
   required?: boolean;
   /** Never sent back to the browser once saved. */
   secret?: boolean;
@@ -28,6 +28,9 @@ export interface ChannelDef {
 
 export const WEBHOOK_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'] as const;
 
+/** "plain" sends the text as it is; the other two are Telegram's parse modes. */
+export const TELEGRAM_FORMATS = ['plain', 'Markdown', 'HTML'] as const;
+
 export const CHANNELS: Record<ChannelType, ChannelDef> = {
   smtp: {
     addressed: true,
@@ -39,6 +42,7 @@ export const CHANNELS: Record<ChannelType, ChannelDef> = {
       { key: 'password', kind: 'text', required: true, secret: true },
       { key: 'from_email', kind: 'email', required: true },
       { key: 'from_name', kind: 'text' },
+      { key: 'reply_to', kind: 'email' },
     ],
   },
   resend: {
@@ -48,6 +52,7 @@ export const CHANNELS: Record<ChannelType, ChannelDef> = {
       { key: 'api_key', kind: 'text', required: true, secret: true, placeholder: 're_…' },
       { key: 'from_email', kind: 'email', required: true },
       { key: 'from_name', kind: 'text' },
+      { key: 'reply_to', kind: 'email' },
     ],
   },
   telegram: {
@@ -56,6 +61,8 @@ export const CHANNELS: Record<ChannelType, ChannelDef> = {
     fields: [
       { key: 'bot_token', kind: 'text', required: true, secret: true, placeholder: '123456:ABC…' },
       { key: 'chat_id', kind: 'text', required: true, placeholder: '-1001234567890' },
+      { key: 'format', kind: 'select', options: TELEGRAM_FORMATS, default: 'plain' },
+      { key: 'silent', kind: 'toggle' },
     ],
   },
   discord: {
@@ -69,6 +76,7 @@ export const CHANNELS: Record<ChannelType, ChannelDef> = {
         secret: true,
         placeholder: 'https://discord.com/api/webhooks/…',
       },
+      { key: 'display_name', kind: 'text' },
     ],
   },
   slack: {
@@ -169,6 +177,10 @@ export function validateChannelConfig(
   const config: ChannelConfig = {};
   for (const field of CHANNELS[type].fields) {
     const raw = input[field.key];
+    if (field.kind === 'toggle') {
+      if (raw === true || raw === 'true') config[field.key] = 'true';
+      continue;
+    }
     let value = typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : '';
     value = field.kind === 'multiline' ? value.replace(/\r\n/g, '\n').trim() : value.trim();
     if (!value && field.secret && previous?.[field.key]) value = previous[field.key] ?? '';

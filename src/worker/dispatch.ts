@@ -1,5 +1,7 @@
 import type { ChannelConfig } from '../shared/channels';
+import { renderTemplate } from '../shared/template';
 import { nextOccurrence, parseLocal } from '../shared/time';
+import type { Rule } from '../shared/time';
 import { pruneAuthTables } from './auth';
 import { unseal } from './crypto';
 import { ensureSchema } from './db';
@@ -32,15 +34,23 @@ export interface Settlement {
   sent: boolean;
 }
 
+export const ruleOf = (row: MessageRow): Rule => ({
+  interval: row.interval,
+  weekdays: row.weekdays,
+  until: row.until,
+});
+
 /**
  * Decides what happens to a message after an attempt. Pure, so the retry and
  * recurrence rules can be tested without a database.
  */
 export function settle(row: MessageRow, outcome: Outcome, now: number): Settlement {
   const anchor = parseLocal(row.local_time);
+  // A schedule limited to a number of sends ends with the send that reaches it.
+  const lastSend = outcome.ok && row.max_sends !== null && row.sent_count + 1 >= row.max_sends;
   const upcoming =
-    anchor && row.repeat !== 'none'
-      ? nextOccurrence(anchor, row.timezone, row.repeat, now, row.occurrence)
+    anchor && row.repeat !== 'none' && !lastSend
+      ? nextOccurrence(anchor, row.timezone, row.repeat, now, row.occurrence, ruleOf(row))
       : null;
 
   if (outcome.ok) {
@@ -116,7 +126,16 @@ export async function attempt(env: Env, row: MessageRow): Promise<Outcome> {
     } catch {
       throw new Error('Could not decrypt the channel settings. Has SECRET_KEY changed?');
     }
-    outcome = { ok: true, detail: await deliver(channel.type, config, row) };
+    // Variables such as {{date}} are filled in now, not when the message was written.
+    const context = { now: Date.now(), timeZone: row.timezone, count: row.sent_count + 1 };
+    outcome = {
+      ok: true,
+      detail: await deliver(channel.type, config, {
+        recipient: row.recipient,
+        subject: renderTemplate(row.subject, context),
+        body: renderTemplate(row.body, context),
+      }),
+    };
   } catch (error) {
     outcome = { ok: false, detail: describeError(error) };
   }

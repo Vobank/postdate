@@ -13,6 +13,7 @@ function row(overrides: Partial<MessageRow> = {}): MessageRow {
   const sendAt = at('2027-05-10T09:00:00Z');
   return {
     id: 'm1',
+    user_id: 'u1',
     channel_id: 'c1',
     recipient: '',
     subject: '',
@@ -20,6 +21,10 @@ function row(overrides: Partial<MessageRow> = {}): MessageRow {
     local_time: '2027-05-10T09:00',
     timezone: 'UTC',
     repeat: 'none',
+    interval: 1,
+    weekdays: 0,
+    until: null,
+    max_sends: null,
     occurrence: 0,
     send_at: sendAt,
     due_at: sendAt,
@@ -77,6 +82,38 @@ describe('settle', () => {
     const next = settle(row({ repeat: 'daily' }), ok, early);
     expect(next).toMatchObject({ status: 'scheduled', occurrence: 0 });
     expect(next.sendAt).toBe(row().send_at);
+  });
+
+  it('follows the interval and the chosen weekdays', () => {
+    // 10 May 2027 is a Monday. Mondays and Thursdays, every second week.
+    const days = (1 << 1) | (1 << 4);
+    const first = settle(row({ repeat: 'weekly', interval: 2, weekdays: days }), ok, now);
+    expect(first).toMatchObject({ status: 'scheduled', occurrence: 1 });
+    expect(first.sendAt).toBe(at('2027-05-13T09:00:00Z'));
+
+    const second = settle(
+      row({ repeat: 'weekly', interval: 2, weekdays: days, occurrence: 1, send_at: first.sendAt }),
+      ok,
+      first.sendAt + 20_000,
+    );
+    expect(second.sendAt).toBe(at('2027-05-24T09:00:00Z'));
+  });
+
+  it('finishes a repeating message once its end date has passed', () => {
+    const last = settle(row({ repeat: 'daily', until: '2027-05-10' }), ok, now);
+    expect(last).toMatchObject({ status: 'sent', sent: true });
+    const more = settle(row({ repeat: 'daily', until: '2027-05-11' }), ok, now);
+    expect(more).toMatchObject({ status: 'scheduled', occurrence: 1 });
+  });
+
+  it('finishes a repeating message after the agreed number of sends', () => {
+    expect(settle(row({ repeat: 'daily', max_sends: 3, sent_count: 2 }), ok, now)).toMatchObject({ status: 'sent' });
+    expect(settle(row({ repeat: 'daily', max_sends: 3, sent_count: 1 }), ok, now)).toMatchObject({
+      status: 'scheduled',
+    });
+    // A failed try is not a send, so it does not use one up.
+    const failed = settle(row({ repeat: 'daily', max_sends: 3, sent_count: 2, attempts: MAX_ATTEMPTS - 1 }), fail, now);
+    expect(failed).toMatchObject({ status: 'scheduled', occurrence: 1 });
   });
 });
 

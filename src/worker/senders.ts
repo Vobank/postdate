@@ -75,6 +75,7 @@ const smtp: Sender = async (config, message) => {
     {
       from: { name: config.from_name || undefined, email: need(config, 'from_email') },
       to: parseRecipients(message.recipient),
+      reply: config.reply_to || undefined,
       subject: message.subject,
       text: message.body,
     },
@@ -90,6 +91,7 @@ const resend: Sender = async (config, message) => {
     {
       from,
       to: parseRecipients(message.recipient),
+      reply_to: config.reply_to || undefined,
       subject: message.subject,
       text: message.body,
     },
@@ -104,6 +106,8 @@ const telegram: Sender = async (config, message) => {
     const response = await postJson(`https://api.telegram.org/bot${token}/sendMessage`, {
       chat_id: need(config, 'chat_id'),
       text: message.body,
+      parse_mode: config.format && config.format !== 'plain' ? config.format : undefined,
+      disable_notification: config.silent === 'true' ? true : undefined,
     });
     return await finish(response);
   } catch (error) {
@@ -113,7 +117,12 @@ const telegram: Sender = async (config, message) => {
 };
 
 const discord: Sender = async (config, message) =>
-  finish(await postJson(need(config, 'webhook_url'), { content: message.body }));
+  finish(
+    await postJson(need(config, 'webhook_url'), {
+      content: message.body,
+      username: config.display_name || undefined,
+    }),
+  );
 
 const slack: Sender = async (config, message) =>
   finish(await postJson(need(config, 'webhook_url'), { text: message.body }));

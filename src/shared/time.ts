@@ -116,37 +116,79 @@ export function wallToUtc(w: Wall, timeZone: string): number {
   return Math.max(first, second);
 }
 
-/** The wall time of the n-th occurrence (0 is the anchor itself). */
-export function addRepeat(anchor: Wall, repeat: Repeat, n: number): Wall {
-  if (repeat === 'none' || n === 0) return { ...anchor };
-  if (repeat === 'daily' || repeat === 'weekly') {
-    const step = repeat === 'daily' ? 1 : 7;
-    const d = new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + n * step));
-    return {
-      ...anchor,
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-    };
+/** The finer points of a repeating schedule. Every part is optional. */
+export interface Rule {
+  /** Every N days, weeks, months or years. Defaults to 1. */
+  interval?: number;
+  /**
+   * Weekly schedules only: the days of the week to run on, as a bitmask with
+   * bit 0 for Sunday. Zero means "the anchor's own day".
+   */
+  weekdays?: number;
+  /** The last local date, "YYYY-MM-DD", on which the schedule may run. */
+  until?: string | null;
+}
+
+export const MAX_INTERVAL = 365;
+
+export const weekdayOf = (w: Wall): number => new Date(Date.UTC(w.year, w.month - 1, w.day)).getUTCDay();
+
+/**
+ * How many days after the anchor each run of one week falls, in order. A week
+ * here is the seven days that start on the anchor's own day.
+ */
+export function weekdayOffsets(anchor: Wall, weekdays: number): number[] {
+  const first = weekdayOf(anchor);
+  const offsets: number[] = [];
+  for (let offset = 0; offset < 7; offset++) {
+    if (weekdays & (1 << ((first + offset) % 7))) offsets.push(offset);
+  }
+  return offsets.length > 0 ? offsets : [0];
+}
+
+function shiftDays(anchor: Wall, days: number): Wall {
+  const d = new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + days));
+  return { ...anchor, year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+}
+
+/** The wall time of the n-th occurrence (0 is the first one). */
+export function addRepeat(anchor: Wall, repeat: Repeat, n: number, rule: Rule = {}): Wall {
+  if (repeat === 'none') return { ...anchor };
+  const interval = Math.max(1, Math.floor(rule.interval ?? 1));
+  if (repeat === 'daily') return shiftDays(anchor, n * interval);
+  if (repeat === 'weekly') {
+    const offsets = weekdayOffsets(anchor, rule.weekdays ?? 0);
+    const week = Math.floor(n / offsets.length);
+    return shiftDays(anchor, week * 7 * interval + (offsets[n % offsets.length] ?? 0));
   }
   // Monthly and yearly keep the anchor's day where the month has one, so a
   // schedule started on the 31st runs on the 30th in April and the 31st in May.
-  const months = (anchor.month - 1) + (repeat === 'monthly' ? n : n * 12);
+  const months = (anchor.month - 1) + (repeat === 'monthly' ? n : n * 12) * interval;
   const year = anchor.year + Math.floor(months / 12);
   const month = (((months % 12) + 12) % 12) + 1;
   return { ...anchor, year, month, day: Math.min(anchor.day, daysInMonth(year, month)) };
 }
 
-export function occurrenceUtc(anchor: Wall, timeZone: string, repeat: Repeat, n: number): number {
-  return wallToUtc(addRepeat(anchor, repeat, n), timeZone);
+export function occurrenceUtc(
+  anchor: Wall,
+  timeZone: string,
+  repeat: Repeat,
+  n: number,
+  rule: Rule = {},
+): number {
+  return wallToUtc(addRepeat(anchor, repeat, n, rule), timeZone);
 }
 
 const MAX_STEPS = 20_000;
 
+const pastEnd = (w: Wall, until: string | null | undefined): boolean =>
+  !!until && formatLocal(w).slice(0, 10) > until;
+
 /**
  * The first occurrence strictly after `afterMs`, starting the search at
- * `fromIndex`. Returns null for one-off schedules and for schedules that would
- * need an unreasonable number of steps to catch up.
+ * `fromIndex`. Returns null for one-off schedules, for schedules that have run
+ * past their end date, and for ones that would need an unreasonable number of
+ * steps to catch up.
  */
 export function nextOccurrence(
   anchor: Wall,
@@ -154,11 +196,48 @@ export function nextOccurrence(
   repeat: Repeat,
   afterMs: number,
   fromIndex = 0,
+  rule: Rule = {},
 ): { index: number; at: number } | null {
   if (repeat === 'none') return null;
   for (let i = 0, index = Math.max(0, fromIndex); i < MAX_STEPS; i++, index++) {
-    const at = occurrenceUtc(anchor, timeZone, repeat, index);
+    const wall = addRepeat(anchor, repeat, index, rule);
+    if (pastEnd(wall, rule.until)) return null;
+    const at = wallToUtc(wall, timeZone);
     if (at > afterMs) return { index, at };
   }
   return null;
+}
+
+/**
+ * Every run that falls inside [fromMs, toMs), at most `limit` of them. Used to
+ * preview a schedule and to draw the calendar.
+ */
+export function occurrencesBetween(
+  anchor: Wall,
+  timeZone: string,
+  repeat: Repeat,
+  rule: Rule,
+  fromIndex: number,
+  fromMs: number,
+  toMs: number,
+  limit = 100,
+): number[] {
+  const out: number[] = [];
+  if (repeat === 'none') {
+    const at = wallToUtc(anchor, timeZone);
+    return at >= fromMs && at < toMs ? [at] : out;
+  }
+  let cursor = nextOccurrence(anchor, timeZone, repeat, fromMs - 1, fromIndex, rule);
+  while (cursor && cursor.at < toMs && out.length < limit) {
+    out.push(cursor.at);
+    cursor = nextOccurrence(anchor, timeZone, repeat, cursor.at, cursor.index + 1, rule);
+  }
+  return out;
+}
+
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True for a real calendar date written "YYYY-MM-DD". */
+export function isLocalDate(value: string): boolean {
+  return DATE_RE.test(value) && parseLocal(`${value}T00:00`) !== null;
 }

@@ -54,6 +54,33 @@ const MIGRATIONS: string[][] = [
      )`,
     `CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries (message_id, at)`,
   ],
+  // 0.2: richer repeats (every N, chosen weekdays, an end) and the activity chart.
+  [
+    `ALTER TABLE messages ADD COLUMN interval INTEGER NOT NULL DEFAULT 1`,
+    `ALTER TABLE messages ADD COLUMN weekdays INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE messages ADD COLUMN until TEXT`,
+    `ALTER TABLE messages ADD COLUMN max_sends INTEGER`,
+    `CREATE INDEX IF NOT EXISTS idx_deliveries_at ON deliveries (at)`,
+  ],
+  // 0.3: accounts. Everyone signs in with an email and sees only their own
+  // channels and messages. Rows from before have no owner until the first
+  // account is created and takes them over (see auth.register). Old sessions
+  // belonged to nobody in particular, so they end here.
+  [
+    `CREATE TABLE IF NOT EXISTS users (
+       id TEXT PRIMARY KEY,
+       email TEXT NOT NULL UNIQUE,
+       password TEXT NOT NULL,
+       created_at INTEGER NOT NULL
+     )`,
+    `DELETE FROM sessions`,
+    `ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE channels ADD COLUMN user_id TEXT`,
+    `ALTER TABLE messages ADD COLUMN user_id TEXT`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_channels_user ON channels (user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_messages_user ON messages (user_id, send_at)`,
+  ],
 ];
 
 // Per-isolate flag. Only a boolean is kept across requests, never a promise.
@@ -99,6 +126,8 @@ export async function setSetting(db: D1Database, key: string, value: string): Pr
 
 export interface ChannelRow {
   id: string;
+  /** The account it belongs to. */
+  user_id: string | null;
   type: ChannelType;
   name: string;
   config: string;
@@ -108,6 +137,7 @@ export interface ChannelRow {
 
 export interface MessageRow {
   id: string;
+  user_id: string | null;
   channel_id: string;
   recipient: string;
   subject: string;
@@ -115,6 +145,10 @@ export interface MessageRow {
   local_time: string;
   timezone: string;
   repeat: Repeat;
+  interval: number;
+  weekdays: number;
+  until: string | null;
+  max_sends: number | null;
   occurrence: number;
   send_at: number;
   due_at: number;

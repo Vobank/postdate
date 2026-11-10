@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { AppState } from '../../shared/types';
 import { ApiError, api } from '../api';
 import { useI18n } from '../i18n';
+import { CheckIcon, ChevronIcon, NewAccountIcon, Postmark, StampArt } from '../icons';
 import { ErrorNotice, Field, LanguageSelect, inputValue } from '../ui';
 
 interface Props {
@@ -9,20 +10,63 @@ interface Props {
   onDone: () => void;
 }
 
-/** Everything a visitor can see before signing in. */
+/**
+ * Everything a visitor can see before signing in: the sign-in form first, and
+ * under it the way in for someone who has no account yet.
+ */
 export function Gate({ state, onDone }: Props) {
+  const [creating, setCreating] = useState(false);
+  // What was typed into one form follows the visitor to the other.
+  const [email, setEmail] = useState('');
+
+  let view;
+  if (!state.configured) view = <Unconfigured />;
+  else if (creating && state.signups) {
+    view = <Register email={email} setEmail={setEmail} onDone={onDone} onBack={() => setCreating(false)} />;
+  } else {
+    view = (
+      <SignIn
+        email={email}
+        setEmail={setEmail}
+        onDone={onDone}
+        onCreate={state.signups ? () => setCreating(true) : undefined}
+      />
+    );
+  }
+
   return (
-    <div class="page page-narrow">
+    <div class="page gate">
       <header class="masthead">
-        <span class="wordmark">Postdate</span>
-      </header>
-      <main>
-        {!state.configured ? <Unconfigured /> : state.claimed ? <SignIn onDone={onDone} /> : <Claim onDone={onDone} />}
-      </main>
-      <footer class="colophon">
+        <span class="wordmark">
+          <Postmark />
+          Postdate
+        </span>
         <LanguageSelect />
-      </footer>
+      </header>
+      <div class="gate-body">
+        <Pitch />
+        <main class="gate-form">{view}</main>
+      </div>
     </div>
+  );
+}
+
+/** What Postdate is, for someone seeing it for the first time. */
+function Pitch() {
+  const { t } = useI18n();
+  return (
+    <section class="pitch">
+      <StampArt />
+      <p class="pitch-line">{t('gate.tagline')}</p>
+      <ul class="pitch-points">
+        {[1, 2, 3].map((n) => (
+          <li key={n}>
+            <CheckIcon />
+            <span>{t(`gate.point.${n}`)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -37,7 +81,32 @@ function Unconfigured() {
   );
 }
 
-function SignIn({ onDone }: { onDone: () => void }) {
+interface FormProps {
+  email: string;
+  setEmail: (email: string) => void;
+  onDone: () => void;
+}
+
+function EmailField({ email, setEmail }: Pick<FormProps, 'email' | 'setEmail'>) {
+  const { t } = useI18n();
+  return (
+    <Field label={t('field.email')}>
+      <input
+        type="email"
+        autocomplete="username"
+        inputMode="email"
+        dir="ltr"
+        required
+        autofocus
+        value={email}
+        onInput={(e) => setEmail(inputValue(e))}
+      />
+    </Field>
+  );
+}
+
+/** `onCreate` is missing when this instance is not taking new accounts. */
+function SignIn({ email, setEmail, onDone, onCreate }: FormProps & { onCreate?: () => void }) {
   const { t } = useI18n();
   const [password, setPassword] = useState('');
   const [error, setError] = useState<unknown>(null);
@@ -48,7 +117,7 @@ function SignIn({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await api('POST', '/login', { password });
+      await api('POST', '/login', { email, password });
       onDone();
     } catch (e) {
       setError(e);
@@ -60,12 +129,12 @@ function SignIn({ onDone }: { onDone: () => void }) {
     <form onSubmit={submit} class="form">
       <h1>{t('login.title')}</h1>
       <ErrorNotice error={error} />
+      <EmailField email={email} setEmail={setEmail} />
       <Field label={t('field.password')}>
         <input
           type="password"
           autocomplete="current-password"
           required
-          autofocus
           value={password}
           onInput={(e) => setPassword(inputValue(e))}
         />
@@ -75,11 +144,30 @@ function SignIn({ onDone }: { onDone: () => void }) {
           {t('login.submit')}
         </button>
       </div>
+      {onCreate && (
+        <>
+          <p class="or" aria-hidden="true">
+            <span>{t('login.or')}</span>
+          </p>
+          <button type="button" class="invite" onClick={onCreate}>
+            <span class="invite-mark">
+              <NewAccountIcon />
+            </span>
+            <span class="invite-text">
+              <span class="invite-title">{t('login.noAccount')}</span>
+              <span class="invite-lead">{t('login.create')}</span>
+            </span>
+            <span class="invite-go">
+              <ChevronIcon />
+            </span>
+          </button>
+        </>
+      )}
     </form>
   );
 }
 
-function Claim({ onDone }: { onDone: () => void }) {
+function Register({ email, setEmail, onDone, onBack }: FormProps & { onBack: () => void }) {
   const { t } = useI18n();
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
@@ -95,7 +183,7 @@ function Claim({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await api('POST', '/setup', { password });
+      await api('POST', '/register', { email, password });
       onDone();
     } catch (e) {
       setError(e);
@@ -105,16 +193,21 @@ function Claim({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={submit} class="form">
+      <p class="crumb">
+        <button type="button" class="btn-text crumb-btn" onClick={onBack}>
+          <span class="arrow">←</span> {t('setup.back')}
+        </button>
+      </p>
       <h1>{t('setup.title')}</h1>
       <p class="lead">{t('setup.lead')}</p>
       <ErrorNotice error={error} />
+      <EmailField email={email} setEmail={setEmail} />
       <Field label={t('field.password')} hint={t('password.hint')}>
         <input
           type="password"
           autocomplete="new-password"
           required
           minLength={10}
-          autofocus
           value={password}
           onInput={(e) => setPassword(inputValue(e))}
         />

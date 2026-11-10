@@ -32,14 +32,18 @@ const loaded = new Map<string, Dictionary>([['en', en]]);
 
 const isLang = (code: string): code is Lang => LANGUAGES.some((l) => l.code === code);
 
-/** The saved choice, or the closest match to the browser's languages. */
-export function initialLang(): Lang {
+/**
+ * The saved choice; failing that the language this instance was set up with;
+ * failing that the closest match to the browser's languages.
+ */
+export function initialLang(instanceDefault?: string | null): Lang {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && isLang(saved)) return saved;
   } catch {
     // Storage can be unavailable in private windows.
   }
+  if (instanceDefault && isLang(instanceDefault)) return instanceDefault;
   for (const wanted of navigator.languages ?? [navigator.language]) {
     if (isLang(wanted)) return wanted;
     const base = wanted.split('-')[0];
@@ -94,6 +98,10 @@ const FIELD_LABELS: Record<string, string> = {
   time: 'msg.time',
   timezone: 'msg.timezone',
   repeat: 'msg.repeat',
+  interval: 'msg.interval',
+  weekdays: 'msg.weekdays',
+  until: 'msg.until',
+  count: 'msg.count',
   channel: 'msg.channel',
   name: 'channel.name',
 };

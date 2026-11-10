@@ -4,8 +4,9 @@ import type { ChannelType, FieldDef } from '../../shared/channels';
 import type { ChannelDTO } from '../../shared/types';
 import { api } from '../api';
 import { useI18n } from '../i18n';
+import { ChannelIcon } from '../icons';
 import { Link, navigate } from '../router';
-import { ConfirmButton, ErrorNotice, Field, Notice, inputValue } from '../ui';
+import { ConfirmButton, ErrorNotice, Field, Info, Notice, inputValue } from '../ui';
 
 export function Channels() {
   const { t } = useI18n();
@@ -33,7 +34,10 @@ export function Channels() {
         <ul class="rows">
           {channels.map((c) => (
             <li key={c.id}>
-              <Link to={`/channels/${c.id}`} class="row row-plain">
+              <Link to={`/channels/${c.id}`} class="row row-channel">
+                <span class="channel-mark">
+                  <ChannelIcon type={c.type} />
+                </span>
                 <span class="row-main">
                   <span class="row-title">{c.name}</span>
                   <span class="row-meta">
@@ -50,6 +54,16 @@ export function Channels() {
     </>
   );
 }
+
+/** How many "guide.<type>.<n>" steps each kind of channel has. */
+const GUIDE_STEPS: Record<ChannelType, number> = {
+  smtp: 4,
+  resend: 4,
+  telegram: 4,
+  discord: 3,
+  slack: 3,
+  webhook: 3,
+};
 
 function defaults(type: ChannelType): Record<string, string> {
   const values: Record<string, string> = {};
@@ -135,12 +149,21 @@ export function ChannelForm({ id }: { id?: string }) {
     const update = (e: Event) => setValues({ ...values, [field.key]: inputValue(e) });
     const saved = existing?.secrets.includes(field.key) ?? false;
     const required = !!field.required && !saved;
+    if (field.kind === 'toggle') {
+      return (
+        <input
+          type="checkbox"
+          checked={value === 'true'}
+          onChange={(e) => setValues({ ...values, [field.key]: (e.currentTarget as HTMLInputElement).checked ? 'true' : '' })}
+        />
+      );
+    }
     if (field.kind === 'select') {
       return (
         <select value={value} onChange={update} dir="ltr">
           {field.options?.map((o) => (
             <option key={o} value={o}>
-              {o}
+              {optionLabel(o)}
             </option>
           ))}
         </select>
@@ -165,6 +188,17 @@ export function ChannelForm({ id }: { id?: string }) {
     );
   };
 
+  /** Most options are proper names (POST, HTML); the few that are not are translated. */
+  const optionLabel = (option: string): string => {
+    const key = `option.${option}`;
+    const text = t(key);
+    return text === key ? option : text;
+  };
+
+  // The guides name the fields by the labels shown on this very form.
+  const guideWords: Record<string, string> = { test: t('channel.test') };
+  for (const field of CHANNELS[type].fields) guideWords[field.key] = t(`field.${field.key}`);
+
   const hintFor = (field: FieldDef): string | undefined => {
     if (existing?.secrets.includes(field.key)) return t('channel.secret.saved');
     return field.key === 'headers' ? t('field.headers.hint') : undefined;
@@ -184,25 +218,50 @@ export function ChannelForm({ id }: { id?: string }) {
         {!id && (
           <fieldset class="types">
             <legend class="field-label">{t('channel.type')}</legend>
-            {CHANNEL_TYPES.map((option) => (
-              <label key={option} class="type">
-                <input type="radio" name="type" checked={type === option} onChange={() => chooseType(option)} />
-                <span>{t(`type.${option}`)}</span>
-              </label>
-            ))}
+            <div class="type-grid">
+              {CHANNEL_TYPES.map((option) => (
+                <label key={option} class="type">
+                  <input type="radio" name="type" checked={type === option} onChange={() => chooseType(option)} />
+                  <ChannelIcon type={option} />
+                  <span>{t(`type.${option}`)}</span>
+                </label>
+              ))}
+            </div>
           </fieldset>
         )}
-        <p class="lead">{t(`type.${type}.help`)}</p>
+        <div class="guide">
+          <p class="lead">{t(`type.${type}.help`)}</p>
+          <Info key={type} text={t('help.show')}>
+            <p class="eyebrow">{t('guide.title')}</p>
+            <ol class="steps">
+              {Array.from({ length: GUIDE_STEPS[type] }, (_, i) => (
+                <li key={i}>{t(`guide.${type}.${i + 1}`, guideWords)}</li>
+              ))}
+            </ol>
+          </Info>
+        </div>
 
         <Field label={t('channel.name')} hint={t('channel.name.hint')}>
           <input type="text" required maxLength={80} value={name} onInput={(e) => setName(inputValue(e))} />
         </Field>
 
-        {CHANNELS[type].fields.map((field) => (
-          <Field key={`${type}.${field.key}`} label={t(`field.${field.key}`)} hint={hintFor(field)} optional={!field.required}>
-            {control(field)}
-          </Field>
-        ))}
+        {CHANNELS[type].fields.map((field) =>
+          field.kind === 'toggle' ? (
+            <label key={`${type}.${field.key}`} class="check">
+              {control(field)}
+              <span>{t(`field.${field.key}`)}</span>
+            </label>
+          ) : (
+            <Field
+              key={`${type}.${field.key}`}
+              label={t(`field.${field.key}`)}
+              hint={hintFor(field)}
+              optional={!field.required && field.kind !== 'select'}
+            >
+              {control(field)}
+            </Field>
+          ),
+        )}
 
         <div class="actions">
           <button type="submit" class="btn" disabled={busy}>

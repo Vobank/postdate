@@ -91,6 +91,24 @@ describe('validateChannelConfig', () => {
     expect(codeOf(() => validateChannelConfig('webhook', { url: 'http://example.com', method: 'TRACE' }))).toBe('invalid_option:method');
   });
 
+  it('stores a switch only when it is on', () => {
+    const base = { bot_token: '1:abc', chat_id: '42' };
+    expect(validateChannelConfig('telegram', base)).toEqual({ ...base, format: 'plain' });
+    expect(validateChannelConfig('telegram', { ...base, silent: 'true', format: 'HTML' })).toEqual({
+      ...base,
+      format: 'HTML',
+      silent: 'true',
+    });
+    expect(validateChannelConfig('telegram', { ...base, silent: true }).silent).toBe('true');
+    expect(validateChannelConfig('telegram', { ...base, silent: '' }).silent).toBeUndefined();
+    expect(codeOf(() => validateChannelConfig('telegram', { ...base, format: 'LaTeX' }))).toBe('invalid_option:format');
+  });
+
+  it('checks the optional reply-to address', () => {
+    expect(validateChannelConfig('smtp', { ...smtp, reply_to: 'team@example.com' }).reply_to).toBe('team@example.com');
+    expect(codeOf(() => validateChannelConfig('smtp', { ...smtp, reply_to: 'nope' }))).toBe('invalid_email:reply_to');
+  });
+
   it('ignores fields the channel type does not define', () => {
     const config = validateChannelConfig('slack', { webhook_url: 'https://hooks.slack.com/x', extra: 'y' });
     expect(config).toEqual({ webhook_url: 'https://hooks.slack.com/x' });
