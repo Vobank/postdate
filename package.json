@@ -1,6 +1,6 @@
 {
   "name": "postdate",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Write a message now, have it delivered later. Self-hosted on Cloudflare Workers.",
   "license": "MIT",
@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "node scripts/deploy.mjs",
     "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs",
     "types": "wrangler types",
     "typecheck": "wrangler types && tsc -p tsconfig.worker.json && tsc -p tsconfig.client.json",
     "test": "vitest run"

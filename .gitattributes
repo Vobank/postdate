@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.png binary
+# Windows batch files only work with Windows line endings.
+*.cmd text eol=crlf
